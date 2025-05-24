@@ -1,0 +1,9 @@
+flask
+flask-core
+flask-jwt-extended
+sqlmodel
+pydantic
+dotenv
+pymysql
+redis
+python-dotenv

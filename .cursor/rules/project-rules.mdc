@@ -1,0 +1,51 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Flask + SQLModel 项目开发规范
+
+## 项目概述
+本项目使用 Flask 作为 Web 框架，SQLModel 作为 ORM，构建现代化的 Python Web 应用。
+
+## 技术栈
+- **Web框架**: Flask + Flask-Core
+- **ORM**: SQLModel (基于 SQLAlchemy 2.0)
+- **数据验证**: Pydantic
+- **身份认证**: Flask-JWT-Extended
+- **数据库**: MySQL (通过 PyMySQL)
+- **缓存**: Redis
+- **配置管理**: python-dotenv
+
+## 代码风格规范
+
+### 注释风格
+- **遵循 PEP 257**（文档字符串约定）和 **PEP 484**（类型提示）标准
+- 所有公共函数、类和模块必须包含文档字符串
+- 使用中文编写文档字符串和注释
+
+### 文档字符串示例
+```python
+def create_user(name: str, email: str) -> User:
+    """创建新用户
+    
+    Args:
+        name: 用户姓名
+        email: 用户邮箱地址
+        
+    Returns:
+        User: 创建的用户对象
+        
+    Raises:
+        ValueError: 当邮箱格式不正确时
+    """
+    pass
+```
+
+### 类型提示
+- 所有函数参数和返回值必须包含类型提示
+- 使用 `typing` 模块的类型注解
+- SQLModel 模型字段使用适当的类型注解
+
+
+
