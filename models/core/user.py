@@ -92,7 +92,7 @@ class User(SQLModel, table=True):
             else:
                 raise UserModelException(code=500,message="密码哈希处理失败")
     @classmethod
-    def create(cls,username:str,password:str,id_card_number:str,phone_number:str,real_name:str,department_id:int)->Dict[str,str]:
+    def create(cls,username:str,password:str,id_card_number:str,phone_number:str,real_name:str,department_id:int)->str:
         """创建用户。
         
         该方法用于创建新的用户记录。
@@ -106,7 +106,7 @@ class User(SQLModel, table=True):
             department_id (int): 所属部门ID
 
         Returns:
-            Dict: 创建成功返回{'success':"用户创建成功"}
+            str: 创建成功返回"用户创建成功"
             
         Raises:
             UserModelException: 如果创建失败，抛出异常
@@ -127,7 +127,7 @@ class User(SQLModel, table=True):
                 )
                 session.add(user)
                 session.commit()
-                return {'success':"用户创建成功"}
+                return "用户创建成功"
             except IntegrityError as e:
                 session.rollback()
                 error_message=str(e)
@@ -140,7 +140,7 @@ class User(SQLModel, table=True):
                 else:
                     raise UserModelException(code=500,message="用户创建失败")
     @classmethod
-    def update(cls,user_id:int,username:str = None,id_card_number:str = None,phone_number:str = None,real_name:str = None,department_id:int = None,role_ids:List[int] = None)->Dict[str,str]:
+    def update(cls,user_id:int,username:str = None,id_card_number:str = None,phone_number:str = None,real_name:str = None,department_id:int = None,role_ids:List[int] = None)->str:
         """更新用户信息。
         
         该方法用于更新用户信息。
@@ -155,7 +155,7 @@ class User(SQLModel, table=True):
             role_ids (List[int],optional): 角色ID列表
         
         Returns:
-            Dict: 更新成功返回{'success':"用户更新成功"}
+            str: 更新成功返回"用户更新成功"
             
         Raises:
             UserModelException: 如果更新失败，抛出异常
@@ -184,7 +184,7 @@ class User(SQLModel, table=True):
                 user.updated_at=datetime.now(timezone.utc)
                 session.add(user)
                 session.commit()
-                return {'success':"用户更新成功"}
+                return "用户更新成功"
             except IntegrityError as e:
                 session.rollback()
                 error_message=str(e)
@@ -197,7 +197,7 @@ class User(SQLModel, table=True):
                 else:
                     raise UserModelException(code=500,message="用户更新失败")
     @classmethod
-    def delete(cls,user_id:int)->Dict[str,str]:
+    def delete(cls,user_id:int)->str:
         """删除用户。
         
         该方法用于删除用户。
@@ -206,7 +206,7 @@ class User(SQLModel, table=True):
             user_id (int): 用户ID
         
         Returns:
-            Dict: 删除成功返回{'success':"用户删除成功"}
+            str: 删除成功返回"用户删除成功"
             
         Raises:
             UserModelException: 如果删除失败，抛出异常
@@ -218,7 +218,7 @@ class User(SQLModel, table=True):
                     raise UserModelException(code=404,message="指定的用户不存在")
                 session.delete(user)
                 session.commit()
-                return {'success':"用户删除成功"}
+                return "用户删除成功"
             except Exception as e:
                 session.rollback()
                 if DEBUG_MODE:
@@ -233,7 +233,7 @@ class User(SQLModel, table=True):
             department_id (int): 部门ID
         
         Returns:
-            List[User]: 返回用户信息列表
+            List[User]: 返回用户对象列表
             
         Raises:
             UserModelException: 如果获取失败，抛出异常
@@ -256,7 +256,7 @@ class User(SQLModel, table=True):
             username (str,optional): 用户名
 
         Returns:
-            User: 返回用户信息
+            User: 返回用户对象
             
         Raises:
             UserModelException: 如果获取失败，抛出异常
@@ -306,7 +306,7 @@ class User(SQLModel, table=True):
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"密码验证失败: {e}")
     @classmethod
-    def change_password(cls,user_id:int,new_password:str)->Dict[str,str]:
+    def change_password(cls,user_id:int,new_password:str)->str:
         """修改用户密码。
         
         该方法用于修改用户密码。
@@ -316,7 +316,7 @@ class User(SQLModel, table=True):
             new_password (str): 新密码
         
         Returns:
-            Dict: 修改成功返回{'success':"密码修改成功"}
+            str: 修改成功返回"密码修改成功"
             
         Raises:
             UserModelException: 如果修改失败，抛出异常
@@ -329,6 +329,7 @@ class User(SQLModel, table=True):
                 user.password_hash=cls.hash_password(new_password)
                 session.add(user)
                 session.commit()
+                return "密码修改成功"
             except Exception as e:
                 session.rollback()
                 if DEBUG_MODE:

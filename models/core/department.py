@@ -28,7 +28,7 @@ class Department(SQLModel,table=True):
     updated_at:datetime=Field(default_factory=lambda:datetime.now(timezone.utc))
 
     @classmethod
-    def create(cls,name:str,level:int,parent_id:int,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->Dict[str,str]:
+    def create(cls,name:str,level:int,parent_id:int,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->str:
         """
         创建部门。
         
@@ -41,7 +41,7 @@ class Department(SQLModel,table=True):
             manager_phone (str,optional): 部门负责人电话
 
         Returns:
-            Dict: 创建成功返回{'success':"部门创建成功"}
+            str: 创建成功返回"部门创建成功"
 
         Raises:
             DepartmentModelException: 如果创建失败，抛出异常
@@ -51,7 +51,7 @@ class Department(SQLModel,table=True):
                 department=Department(name=name,level=level,parent_id=parent_id,description=description,manager_name=manager_name,manager_phone=manager_phone)
                 session.add(department)
                 session.commit()
-                return {'success':"部门创建成功"}
+                return "部门创建成功"
             except Exception as e:
                 session.rollback()
                 if DEBUG_MODE:
@@ -60,7 +60,7 @@ class Department(SQLModel,table=True):
                     raise DepartmentModelException(code=500,message="部门创建失败")
 
     @classmethod
-    def update(cls,department_id:int,name:Optional[str]=None,level:Optional[int]=None,parent_id:Optional[int]=None,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->Dict[str,str]:
+    def update(cls,department_id:int,name:Optional[str]=None,level:Optional[int]=None,parent_id:Optional[int]=None,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->str:
         """
         更新部门。
         
@@ -74,7 +74,7 @@ class Department(SQLModel,table=True):
             manager_phone (str,optional): 部门负责人电话
 
         Returns:
-            Dict: 更新成功返回{'success':"部门更新成功"}
+            str: 更新成功返回"部门更新成功"
 
         Raises:
             DepartmentModelException: 如果更新失败，抛出异常
@@ -97,7 +97,7 @@ class Department(SQLModel,table=True):
                 if manager_phone:
                     department.manager_phone=manager_phone
                 session.commit()
-                return {'success':"部门更新成功"}
+                return "部门更新成功"
             except Exception as e:
                 session.rollback()
                 if DEBUG_MODE:
@@ -105,7 +105,7 @@ class Department(SQLModel,table=True):
                 else:
                     raise DepartmentModelException(code=500,message="部门更新失败")
     @classmethod
-    def delete(cls,department_id:int)->Dict[str,str]:
+    def delete(cls,department_id:int)->str:
         """
         删除部门。
         
@@ -113,7 +113,7 @@ class Department(SQLModel,table=True):
             department_id (int): 部门ID
 
         Returns:
-            Dict: 删除成功返回{'success':"部门删除成功"}
+            str: 删除成功返回"部门删除成功"
 
         Raises:
             DepartmentModelException: 如果删除失败，抛出异常
@@ -125,7 +125,7 @@ class Department(SQLModel,table=True):
                     raise DepartmentModelException(code=404,message="部门不存在")
                 session.delete(department)
                 session.commit()
-                return {'success':"部门删除成功"}
+                return "部门删除成功"
             except Exception as e:
                 session.rollback()
                 if DEBUG_MODE:
@@ -206,7 +206,7 @@ class Department(SQLModel,table=True):
                         dept_parent_id (int): 当前层级的父部门ID
                         
                     Returns:
-                        List[Dict]: 当前层级的部门列表，包含子部门
+                        List[Dict[str:str]]: 当前层级的部门列表，包含子部门
                     """
                     departments = session.exec(
                         select(Department).where(Department.parent_id == dept_parent_id)

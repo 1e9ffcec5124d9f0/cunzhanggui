@@ -20,7 +20,7 @@ PermissionManager.register_permission(
     "创建部门权限"
 )
 @require_permission("department.manage.create")
-def create_department(current_user:User,name:str,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->Dict[str,str]:
+def create_department(current_user:User,name:str,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->str:
     """创建子部门服务函数
     Args:
         current_user (User): 当前用户对象
@@ -30,7 +30,7 @@ def create_department(current_user:User,name:str,description:Optional[str]=None,
         manager_phone (Optional[str]): 部门负责人电话
 
     Returns:
-        Dict[str,str]: 返回成功消息
+        str: 返回成功消息
     Raises:
         DepartmentServiceException: 部门模型异常
         PermissionServiceException: 权限服务异常
@@ -64,7 +64,7 @@ PermissionManager.register_permission(
     "更新部门权限"
 )
 @require_permission("department.manage.update")
-def update_department(current_user:User,department_id:int,name:Optional[str]=None,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->Dict[str,str]:
+def update_department(current_user:User,department_id:int,name:Optional[str]=None,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->str:
     """更新部门服务函数
     Args:
         current_user (User): 当前用户对象
@@ -74,7 +74,7 @@ def update_department(current_user:User,department_id:int,name:Optional[str]=Non
         manager_name (Optional[str]): 部门负责人姓名
         manager_phone (Optional[str]): 部门负责人电话
     Returns:
-        Dict[str,str]: 返回成功消息
+        str: 返回成功消息
     Raises:
         DepartmentServiceException: 部门模型异常
         PermissionServiceException: 权限服务异常
@@ -106,13 +106,13 @@ PermissionManager.register_permission(
     "删除部门权限"
 )
 @require_permission('department.manage.delete')
-def delete_department(current_user:User,department_id:int)->Dict[str,str]:
+def delete_department(current_user:User,department_id:int)->str:
     """删除部门服务函数
     Args:
         current_user (User): 当前用户对象
         department_id (int): 子部门ID
     Returns:
-        Dict[str,str]: 返回成功消息
+        str: 返回成功消息
     Raises:
         DepartmentServiceException: 部门模型异常
         PermissionServiceException: 权限服务异常
