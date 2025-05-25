@@ -98,16 +98,16 @@ class User(SQLModel, table=True):
                 session.commit()
                 return {'success':"用户创建成功"}
             except IntegrityError as e:
+                session.rollback()
                 error_message=str(e)
                 if "username" in error_message:
                     raise UserModelException(code=400,message="用户名已存在")
             except Exception as e:
+                session.rollback()
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"用户创建失败: {e}")
                 else:
                     raise UserModelException(code=500,message="用户创建失败")
-            finally:
-                session.rollback()
     @classmethod
     def update(cls,user_id:int,username:str = None,id_card_number:str = None,phone_number:str = None,real_name:str = None,department_id:int = None,role_ids:List[int] = None)->Dict[str,str]:
         """更新用户信息。
@@ -155,17 +155,16 @@ class User(SQLModel, table=True):
                 session.commit()
                 return {'success':"用户更新成功"}
             except IntegrityError as e:
+                session.rollback()
                 error_message=str(e)
                 if "username" in error_message:
                     raise UserModelException(code=400,message="用户名已存在")
             except Exception as e:
+                session.rollback()
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"用户更新失败: {e}")
                 else:
                     raise UserModelException(code=500,message="用户更新失败")
-            finally:
-                session.rollback()
-        
     @classmethod
     def delete(cls,user_id:int)->Dict[str,str]:
         """删除用户。
@@ -190,18 +189,50 @@ class User(SQLModel, table=True):
                 session.commit()
                 return {'success':"用户删除成功"}
             except Exception as e:
+                session.rollback()
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"用户删除失败: {e}")
                 else:
                     raise UserModelException(code=500,message="用户删除失败")
-            finally:
-                session.rollback()
+    @classmethod
+    def get_user_by_department_id(cls,department_id:int)->List[Dict[str,str]]:
+        """根据部门ID获取用户信息。
         
+        Args:
+            department_id (int): 部门ID
+        
+        Returns:
+            List[Dict[str,str]]: 返回用户信息列表
+            
+        Raises:
+            UserModelException: 如果获取失败，抛出异常
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                users=session.exec(select(User).where(User.department_id==department_id)).all()
+                result=[]
+                for user in users:
+                    result.append({
+                        "id":user.id,
+                        "username":user.username,
+                        "id_card_number":user.id_card_number,
+                        "phone_number":user.phone_number,
+                        "real_name":user.real_name,
+                        "department_id":user.department_id,
+                        "role_ids":user.role_ids,
+                        "login_attempts":user.login_attempts,
+                        "created_at":user.created_at,
+                        "updated_at":user.updated_at
+                    })
+                return result
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise UserModelException(code=500,message=f"获取用户失败: {e}")
+                else:
+                    raise UserModelException(code=500,message="获取用户失败")
     @classmethod
     def get_user(cls,user_id:Optional[int] = None,username:Optional[str] = None)->Dict[str,str]:
         """根据用户ID获取用户信息。
-        
-        该方法用于根据用户ID获取用户信息。
         
         Args:
             user_id (int,optional): 用户ID
@@ -240,9 +271,6 @@ class User(SQLModel, table=True):
                     raise UserModelException(code=500,message=f"获取用户失败: {e}")
                 else:
                     raise UserModelException(code=500,message="获取用户失败")
-            finally:
-                session.rollback()
-    
     @classmethod
     def verify_password(cls,username:str,password:str)->bool:
         """验证用户密码。
@@ -263,11 +291,11 @@ class User(SQLModel, table=True):
             try:
                 user=session.exec(select(User).where(User.username==username)).first()
                 if not user:
-                    raise UserModelException(code=404,message="指定的用户不存在")
+                    return False
                 if user.password_hash==cls.hash_password(password):
                     return True
                 else:
-                    raise UserModelException(code=401,message="密码验证失败")
+                    return False
             except Exception as e:
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"密码验证失败: {e}")

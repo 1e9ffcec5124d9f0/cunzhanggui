@@ -56,12 +56,11 @@ class Role(SQLModel,table=True):
                 session.commit()                
                 return {'success':"角色创建成功"}
             except Exception as e:
+                session.rollback()
                 if DEBUG_MODE:
                     raise RoleModelException(code=500,message=f"角色创建失败: {e}")
                 else:
                     raise RoleModelException(code=500,message="角色创建失败")
-            finally:
-                session.rollback()
     @classmethod
     def update(cls,role_id:int,name:Optional[str]=None,description:Optional[str]=None,permissions:Optional[List[str]]=None)->Dict[str,str]:
         """更新角色。
@@ -93,12 +92,11 @@ class Role(SQLModel,table=True):
                 session.commit()
                 return {'success':"角色更新成功"}
             except Exception as e:
+                session.rollback()
                 if DEBUG_MODE:
                     raise RoleModelException(code=500,message=f"角色更新失败: {e}")
                 else:
                     raise RoleModelException(code=500,message="角色更新失败")
-            finally:
-                session.rollback()
     @classmethod
     def delete(cls,role_id:int)->Dict[str,str]:
         """删除角色。
@@ -121,12 +119,11 @@ class Role(SQLModel,table=True):
                 session.commit()
                 return {'success':"角色删除成功"}
             except Exception as e:
+                session.rollback()
                 if DEBUG_MODE:
                     raise RoleModelException(code=500,message=f"角色删除失败: {e}")
                 else:
                     raise RoleModelException(code=500,message="角色删除失败")
-            finally:
-                session.rollback()
     @classmethod
     def get_role(cls,role_id:int)->Dict[str,str]:
         """获取角色。
@@ -159,6 +156,36 @@ class Role(SQLModel,table=True):
                     raise RoleModelException(code=500,message=f"获取角色失败: {e}")
                 else:
                     raise RoleModelException(code=500,message="获取角色失败")
-            finally:
-                session.rollback()
+    @classmethod
+    def get_role_by_department_id(cls,department_id:int)->List[Dict[str,str]]:
+        """根据部门ID获取角色列表。
         
+        Args:
+            department_id (int): 部门ID
+        
+        Returns:
+            List[Dict[str,str]]: 返回角色列表
+        
+        Raises:
+            RoleModelException: 如果获取失败，抛出异常
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                roles=session.exec(select(Role).where(Role.department_id==department_id)).all()
+                result=[]
+                for role in roles:
+                    result.append({
+                        "id":role.id,
+                        "name":role.name,
+                        "description":role.description,
+                        "permissions":role.permissions,
+                        "department_id":role.department_id,
+                        "created_at":role.created_at,
+                        "updated_at":role.updated_at
+                    })
+                return result
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise RoleModelException(code=500,message=f"获取角色失败: {e}")
+                else:
+                    raise RoleModelException(code=500,message="获取角色失败")
