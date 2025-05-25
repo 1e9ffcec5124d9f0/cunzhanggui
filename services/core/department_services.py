@@ -40,6 +40,8 @@ def create_department(current_user:User,name:str,description:Optional[str]=None,
     """
     try:
         current_department=current_user.get_department()
+        if current_department.level not in [1,2,3]:
+            raise DepartmentServiceException(code=400,message="只能创建县级、镇街级、村社级部门")
         if current_department.level+1>3:
             raise DepartmentServiceException(code=400,message="村社级部门不能再创建子部门")
         return Department.create(

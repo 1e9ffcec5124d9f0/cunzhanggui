@@ -5,7 +5,7 @@ from sqlmodel import create_engine
 import redis
 
 DEBUG_MODE=os.getenv("DEBUG_MODE")
-
+JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY")
 db_config={
     "user": os.getenv("DB_USER"),
     "password":os.getenv("DB_PASSWORD"),

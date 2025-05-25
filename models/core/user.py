@@ -34,7 +34,7 @@ class User(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     def get_roles(self)->List[Role]:
         """获取用户角色列表。
-        
+
         Returns:
             List[Role]: 用户角色列表
         """
@@ -63,29 +63,29 @@ class User(SQLModel, table=True):
                 else:
                     raise UserModelException(code=500,message="获取部门失败")
     @staticmethod
-    def hash_password(password: str) -> str:
+    def hash_password(username:str,password: str) -> str:
         """将明文密码进行哈希处理。
         
         使用SM3哈希算法对密码进行加密处理，添加固定的盐值以增强安全性。
         该方法为静态方法，可以直接通过类调用，无需实例化。
         
         Args:
+            username (str): 用户名
             password (str): 需要进行哈希处理的明文密码
             
         Returns:
             str: 经过SM3哈希处理后的密码字符串（十六进制格式）
             
         Example:
-            >>> User.hash_password("mypassword123")
+            >>> User.hash_password("username","mypassword123")
             "a1b2c3d4e5f6..."
             
         Note:
-            - 使用了固定的盐值"舒一君"和"1e9ffcec"来增强密码安全性
             - 返回的哈希值为十六进制字符串格式
             - 相同的输入密码总是产生相同的哈希值
         """
         try:
-            return sm3_hexhash(f"舒一君{password}1e9ffcec".encode('utf-8'))
+            return sm3_hexhash(f"{username}{password}1e9ffcec".encode('utf-8'))
         except Exception as e:
             if DEBUG_MODE:
                 raise UserModelException(code=500,message=f"密码哈希处理失败: {e}")
@@ -119,7 +119,7 @@ class User(SQLModel, table=True):
                 
                 user=cls(
                     username=username,
-                    password_hash=cls.hash_password(password),
+                    password_hash=cls.hash_password(username,password),
                     id_card_number=id_card_number,
                     phone_number=phone_number,
                     real_name=real_name,
@@ -140,7 +140,7 @@ class User(SQLModel, table=True):
                 else:
                     raise UserModelException(code=500,message="用户创建失败")
     @classmethod
-    def update(cls,user_id:int,username:str = None,id_card_number:str = None,phone_number:str = None,real_name:str = None,department_id:int = None,role_ids:List[int] = None)->str:
+    def update(cls,user_id:int,username:str = None,id_card_number:str = None,phone_number:str = None,real_name:str = None,department_id:int = None,role_ids:List[int] = None,login_attempts:int = None)->str:
         """更新用户信息。
         
         该方法用于更新用户信息。
@@ -153,6 +153,7 @@ class User(SQLModel, table=True):
             real_name (str,optional): 真实姓名
             department_id (int,optional): 所属部门ID
             role_ids (List[int],optional): 角色ID列表
+            login_attempts (int,optional): 登录尝试次数
         
         Returns:
             str: 更新成功返回"用户更新成功"
@@ -179,6 +180,8 @@ class User(SQLModel, table=True):
                     if not department:
                         raise UserModelException(code=404,message="指定的部门不存在")
                     user.department_id=department_id
+                if login_attempts:
+                    user.login_attempts=login_attempts
                 if role_ids:
                     user.role_ids=role_ids
                 user.updated_at=datetime.now(timezone.utc)
@@ -298,7 +301,7 @@ class User(SQLModel, table=True):
                 user=session.exec(select(User).where(User.username==username)).first()
                 if not user:
                     return False
-                if user.password_hash==cls.hash_password(password):
+                if user.password_hash==cls.hash_password(username,password):
                     return True
                 else:
                     return False
@@ -326,7 +329,7 @@ class User(SQLModel, table=True):
                 user=session.exec(select(User).where(User.id==user_id)).first()
                 if not user:
                     raise UserModelException(code=404,message="指定的用户不存在")
-                user.password_hash=cls.hash_password(new_password)
+                user.password_hash=cls.hash_password(user.username,new_password)
                 session.add(user)
                 session.commit()
                 return "密码修改成功"

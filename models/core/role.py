@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 from typing import Optional,List,Dict
 from sqlalchemy import JSON
 from sqlmodel import SQLModel,Field, Session, select
-from models.core.permission import Permission
 from core.configs import DEBUG_MODE, application_sqlmodel_engine
 from models.core.department import Department
 class RoleModelException(Exception):
@@ -87,7 +86,7 @@ class Role(SQLModel,table=True):
                     role.description=description
                 if permissions:
                     role.permissions=permissions
-                role.update_at=datetime.now(timezone.utc)
+                role.updated_at=datetime.now(timezone.utc)
                 session.add(role)
                 session.commit()
                 return "角色更新成功"

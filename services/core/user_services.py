@@ -1,4 +1,6 @@
 from typing import List, Optional, Dict
+
+from flask_jwt_extended import create_access_token
 from core.configs import DEBUG_MODE
 from models.core.user import User, UserModelException
 from models.core.department import Department
@@ -328,4 +330,45 @@ def change_user_password(current_user: User, user_id: int, new_password: str) ->
             raise UserServiceException(code=500, message=f"修改密码失败: {e}")
         else:
             raise UserServiceException(code=500, message="修改密码失败")
+
+PermissionManager.register_permission(
+    "user.login",
+    "用户登录权限"
+)
+@require_permission("user.login")
+def login(current_user: User, username: str, password: str) -> str:
+    """用户登录服务函数
+    
+    Args:
+        current_user (User): 当前用户对象
+        username (str): 用户名
+        password (str): 密码
+        
+    Returns:
+        str: Access Token
+    
+    Raises:
+        UserServiceException: 用户模型异常
+        PermissionServiceException: 权限服务异常
+    """
+    try:
+        from core.crypto.sm2_crypto import SM2Crypto
+        password=SM2Crypto.decrypt(password)
+        if User.verify_password(username=username, password=password) and current_user.login_attempts<=5:
+            current_user.login_attempts=0
+            User.update(user_id=current_user.id, login_attempts=current_user.login_attempts)
+            return create_access_token(identity=current_user.id)
+        else:
+            current_user.login_attempts+=1
+            User.update(user_id=current_user.id, login_attempts=current_user.login_attempts)
+            raise UserServiceException(code=403, message="用户名或密码错误")
+    except UserModelException as e:
+        raise UserServiceException(code=e.code, message=e.message)
+    except PermissionServiceException as e:
+        raise e
+    except Exception as e:
+        if DEBUG_MODE:
+            raise UserServiceException(code=500, message=f"登录失败: {e}")
+        else:
+            raise UserServiceException(code=500, message="登录失败")
 

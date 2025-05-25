@@ -20,7 +20,7 @@ class Department(SQLModel,table=True):
     id:Optional[int]=Field(default=None,primary_key=True)
     name:str=Field(...,index=True)
     level:int=Field(...,description="部门级别: 0-根部门, 1-县级, 2-镇街级, 3-村社级")
-    parent_id:int=Field(default=...,foreign_key="departments.id",description="父部门ID")
+    parent_id:Optional[int]=Field(default=None, foreign_key="departments.id", nullable=True, description="父部门ID (根部门应为 None)")
     description: Optional[str] = Field(default="", description="部门描述")
     manager_name: Optional[str] = Field(default="", description="部门负责人姓名")
     manager_phone: Optional[str] = Field(default="", description="部门负责人电话")
@@ -28,14 +28,14 @@ class Department(SQLModel,table=True):
     updated_at:datetime=Field(default_factory=lambda:datetime.now(timezone.utc))
 
     @classmethod
-    def create(cls,name:str,level:int,parent_id:int,description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->str:
+    def create(cls,name:str,level:int,parent_id:Optional[int],description:Optional[str]=None,manager_name:Optional[str]=None,manager_phone:Optional[str]=None)->str:
         """
         创建部门。
         
         Args:
             name (str): 部门名称
-            level (int): 部门级别
-            parent_id (int): 父部门ID
+            level (int): 部门级别 (0 表示根部门)
+            parent_id (Optional[int]): 父部门ID (如果 level 为 0, 即根部门, 此参数应为 None)
             description (str,optional): 部门描述
             manager_name (str,optional): 部门负责人姓名
             manager_phone (str,optional): 部门负责人电话
@@ -332,4 +332,23 @@ class Department(SQLModel,table=True):
                     raise DepartmentModelException(code=500, message=f"检查部门关系失败: {e}")
                 else:
                     raise DepartmentModelException(code=500, message="检查部门关系失败")
-
+    
+    @classmethod
+    def get_root_department(cls)->"Department":
+        """
+        获取根部门。
+        
+        Returns:
+            Department: 返回根部门对象
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                root_department=session.exec(select(Department).where(Department.level==0)).first()
+                if root_department is None:
+                    raise DepartmentModelException(code=404, message="根部门不存在")
+                return root_department
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise DepartmentModelException(code=500, message=f"获取根部门失败: {e}")
+                else:
+                    raise DepartmentModelException(code=500, message="获取根部门失败")
