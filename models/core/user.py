@@ -6,6 +6,7 @@ from core.crypto.sm3_hash import sm3_hexhash
 from core.configs import application_sqlmodel_engine
 from sqlalchemy.exc import IntegrityError
 from models.core.department import Department
+from models.core.role import Role
 class UserModelException(Exception):
     """用户模型异常类。
     
@@ -31,6 +32,36 @@ class User(SQLModel, table=True):
     role_ids: List[int] = Field(default=[], sa_type=JSON, description="角色ID列表")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    def get_roles(self)->List[Role]:
+        """获取用户角色列表。
+        
+        Returns:
+            List[Role]: 用户角色列表
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                roles=session.exec(select(Role).where(Role.id.in_(self.role_ids))).all()
+                return roles
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise UserModelException(code=500,message=f"获取角色失败: {e}")
+                else:
+                    raise UserModelException(code=500,message="获取角色失败")
+    def get_department(self)->Department:
+        """获取用户所属部门。
+        
+        Returns:
+            Department: 用户所属部门
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                department=session.exec(select(Department).where(Department.id==self.department_id)).first()
+                return department
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise UserModelException(code=500,message=f"获取部门失败: {e}")
+                else:
+                    raise UserModelException(code=500,message="获取部门失败")
     @staticmethod
     def hash_password(password: str) -> str:
         """将明文密码进行哈希处理。
@@ -195,14 +226,14 @@ class User(SQLModel, table=True):
                 else:
                     raise UserModelException(code=500,message="用户删除失败")
     @classmethod
-    def get_user_by_department_id(cls,department_id:int)->List[Dict[str,str]]:
+    def get_users_by_department_id(cls,department_id:int)->List["User"]:
         """根据部门ID获取用户信息。
         
         Args:
             department_id (int): 部门ID
         
         Returns:
-            List[Dict[str,str]]: 返回用户信息列表
+            List[User]: 返回用户信息列表
             
         Raises:
             UserModelException: 如果获取失败，抛出异常
@@ -210,28 +241,14 @@ class User(SQLModel, table=True):
         with Session(application_sqlmodel_engine) as session:
             try:
                 users=session.exec(select(User).where(User.department_id==department_id)).all()
-                result=[]
-                for user in users:
-                    result.append({
-                        "id":user.id,
-                        "username":user.username,
-                        "id_card_number":user.id_card_number,
-                        "phone_number":user.phone_number,
-                        "real_name":user.real_name,
-                        "department_id":user.department_id,
-                        "role_ids":user.role_ids,
-                        "login_attempts":user.login_attempts,
-                        "created_at":user.created_at,
-                        "updated_at":user.updated_at
-                    })
-                return result
+                return users
             except Exception as e:
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"获取用户失败: {e}")
                 else:
                     raise UserModelException(code=500,message="获取用户失败")
     @classmethod
-    def get_user(cls,user_id:Optional[int] = None,username:Optional[str] = None)->Dict[str,str]:
+    def get_user(cls,user_id:Optional[int] = None,username:Optional[str] = None)->"User":
         """根据用户ID获取用户信息。
         
         Args:
@@ -239,7 +256,7 @@ class User(SQLModel, table=True):
             username (str,optional): 用户名
 
         Returns:
-            Dict: 返回用户信息
+            User: 返回用户信息
             
         Raises:
             UserModelException: 如果获取失败，抛出异常
@@ -254,18 +271,7 @@ class User(SQLModel, table=True):
                     raise UserModelException(code=400,message="用户ID或用户名不能同时为空")
                 if not user:
                     raise UserModelException(code=404,message="指定的用户不存在")
-                return {
-                    "id":user.id,
-                    "username":user.username,
-                    "id_card_number":user.id_card_number,
-                    "phone_number":user.phone_number,
-                    "real_name":user.real_name,
-                    "department_id":user.department_id,
-                    "role_ids":user.role_ids,
-                    "login_attempts":user.login_attempts,
-                    "created_at":user.created_at,
-                    "updated_at":user.updated_at
-                }
+                return user
             except Exception as e:
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"获取用户失败: {e}")
@@ -299,3 +305,33 @@ class User(SQLModel, table=True):
             except Exception as e:
                 if DEBUG_MODE:
                     raise UserModelException(code=500,message=f"密码验证失败: {e}")
+    @classmethod
+    def change_password(cls,user_id:int,new_password:str)->Dict[str,str]:
+        """修改用户密码。
+        
+        该方法用于修改用户密码。
+        
+        Args:
+            user_id (int): 用户ID
+            new_password (str): 新密码
+        
+        Returns:
+            Dict: 修改成功返回{'success':"密码修改成功"}
+            
+        Raises:
+            UserModelException: 如果修改失败，抛出异常
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                user=session.exec(select(User).where(User.id==user_id)).first()
+                if not user:
+                    raise UserModelException(code=404,message="指定的用户不存在")
+                user.password_hash=cls.hash_password(new_password)
+                session.add(user)
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                if DEBUG_MODE:
+                    raise UserModelException(code=500,message=f"密码修改失败: {e}")
+                else:
+                    raise UserModelException(code=500,message="密码修改失败")

@@ -7,3 +7,4 @@ dotenv
 pymysql
 redis
 python-dotenv
+pytest

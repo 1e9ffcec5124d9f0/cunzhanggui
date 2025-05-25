@@ -7,7 +7,7 @@ alwaysApply: true
 
 ## 项目概述
 本项目使用 Flask 作为 Web 框架，SQLModel 作为 ORM，构建现代化的 Python Web 应用。
-
+项目文档位于docs文件夹内
 ## 技术栈
 - **Web框架**: Flask + Flask-Core
 - **ORM**: SQLModel (基于 SQLAlchemy 2.0)

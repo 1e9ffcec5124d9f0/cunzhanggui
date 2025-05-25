@@ -125,14 +125,14 @@ class Role(SQLModel,table=True):
                 else:
                     raise RoleModelException(code=500,message="角色删除失败")
     @classmethod
-    def get_role(cls,role_id:int)->Dict[str,str]:
+    def get_role(cls,role_id:int)->"Role":
         """获取角色。
         
         Args:
             role_id (int): 角色ID
         
         Returns:
-            Dict: 返回角色信息
+            Role: 返回角色信息
         
         Raises:
             RoleModelException: 如果获取失败，抛出异常
@@ -142,29 +142,21 @@ class Role(SQLModel,table=True):
                 role=session.exec(select(Role).where(Role.id==role_id)).first()
                 if not role:
                     raise RoleModelException(code=404,message="指定的角色不存在")
-                return {
-                    "id":role.id,
-                    "name":role.name,
-                    "description":role.description,
-                    "permissions":role.permissions,
-                    "department_id":role.department_id,
-                    "created_at":role.created_at,
-                    "updated_at":role.updated_at
-                }
+                return role
             except Exception as e:
                 if DEBUG_MODE:
                     raise RoleModelException(code=500,message=f"获取角色失败: {e}")
                 else:
                     raise RoleModelException(code=500,message="获取角色失败")
     @classmethod
-    def get_role_by_department_id(cls,department_id:int)->List[Dict[str,str]]:
+    def get_roles_by_department_id(cls,department_id:int)->List["Role"]:
         """根据部门ID获取角色列表。
         
         Args:
             department_id (int): 部门ID
         
         Returns:
-            List[Dict[str,str]]: 返回角色列表
+            List[Role]: 返回角色列表
         
         Raises:
             RoleModelException: 如果获取失败，抛出异常
@@ -172,18 +164,7 @@ class Role(SQLModel,table=True):
         with Session(application_sqlmodel_engine) as session:
             try:
                 roles=session.exec(select(Role).where(Role.department_id==department_id)).all()
-                result=[]
-                for role in roles:
-                    result.append({
-                        "id":role.id,
-                        "name":role.name,
-                        "description":role.description,
-                        "permissions":role.permissions,
-                        "department_id":role.department_id,
-                        "created_at":role.created_at,
-                        "updated_at":role.updated_at
-                    })
-                return result
+                return roles
             except Exception as e:
                 if DEBUG_MODE:
                     raise RoleModelException(code=500,message=f"获取角色失败: {e}")
