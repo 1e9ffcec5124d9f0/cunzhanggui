@@ -40,10 +40,11 @@ def create_department(current_user:User,name:str,description:Optional[str]=None,
     """
     try:
         current_department=current_user.get_department()
-        if current_department.level not in [1,2,3]:
+        if current_department.level+1 not in [1,2,3]:
+            if current_department.level+1>3:
+                raise DepartmentServiceException(code=400,message="村社级部门不能再创建子部门")
             raise DepartmentServiceException(code=400,message="只能创建县级、镇街级、村社级部门")
-        if current_department.level+1>3:
-            raise DepartmentServiceException(code=400,message="村社级部门不能再创建子部门")
+        
         return Department.create(
             name=name,
             level=current_department.level+1,
@@ -55,6 +56,8 @@ def create_department(current_user:User,name:str,description:Optional[str]=None,
     except DepartmentModelException as e:
         raise DepartmentServiceException(code=e.code,message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except DepartmentServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -98,6 +101,8 @@ def update_department(current_user:User,department_id:int,name:Optional[str]=Non
         raise DepartmentServiceException(code=e.code,message=e.message)
     except PermissionServiceException as e:
         raise e
+    except DepartmentServiceException as e:
+        raise e
     except Exception as e:
         if DEBUG_MODE:
             raise DepartmentServiceException(code=500,message=f"更新部门失败: {e}")
@@ -130,6 +135,8 @@ def delete_department(current_user:User,department_id:int)->str:
         raise DepartmentServiceException(code=e.code,message=e.message)
     except PermissionServiceException as e:
         raise e
+    except DepartmentServiceException as e:
+        raise e
     except Exception as e:
         if DEBUG_MODE:
             raise DepartmentServiceException(code=500,message=f"删除部门失败: {e}")
@@ -157,7 +164,7 @@ def get_department(current_user:User,department_id:Optional[int]=None)->Departme
     try:
         current_department=current_user.get_department()
         if department_id:
-            if not current_department.check_is_child(department_id):
+            if not current_department.check_is_child(department_id) and department_id!=current_department.id:
                 raise DepartmentServiceException(code=400,message="只能获取当前部门或子部门(包括子部门的子部门)")
             return Department.get_department(department_id=department_id)
         else:
@@ -165,6 +172,8 @@ def get_department(current_user:User,department_id:Optional[int]=None)->Departme
     except DepartmentModelException as e:
         raise DepartmentServiceException(code=e.code,message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except DepartmentServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -189,10 +198,12 @@ def get_department_tree(current_user:User)->List[Dict[str,str]]:
     """
     try:
         current_department=current_user.get_department()
-        return Department.get_department_tree_by_parent_id(current_department.id)
+        return Department.get_department_tree_by_parent_id_fast(current_department.id)
     except DepartmentModelException as e:
         raise DepartmentServiceException(code=e.code,message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except DepartmentServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:

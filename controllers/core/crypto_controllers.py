@@ -16,6 +16,6 @@ crypto_blueprint = Blueprint('crypto', __name__, url_prefix='/api/crypto')
 def get_public_key():
     """获取公钥"""
     public_key = SM2Crypto.get_public_key()
-    return jsonify({"code": 200, "message": "获取公钥成功", "public_key": public_key}), 200
+    return jsonify({"code": 200, "message": "获取公钥成功", "data": {"public_key": public_key}}), 200
 
 

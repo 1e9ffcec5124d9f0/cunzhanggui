@@ -182,9 +182,61 @@ class Department(SQLModel,table=True):
                 else:
                     raise DepartmentModelException(code=500,message="获取部门失败")
     @classmethod
-    def get_department_tree_by_parent_id(cls, parent_id: int) -> List[Dict[str,str]]:
+    def get_all_descendants(cls, parent_id: int) -> List["Department"]:
         """
-        根据父部门ID构建完整的部门树。
+        获取指定部门的所有后代部门（包括所有层级）。
+        
+        使用层级递进查询的方式，相比查询所有部门更高效。
+        
+        Args:
+            parent_id (int): 父部门ID
+
+        Returns:
+            List[Department]: 返回所有后代部门列表
+
+        Raises:
+            DepartmentModelException: 如果获取失败，抛出异常
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                descendants = []
+                current_level_ids = [parent_id]
+                visited = set()
+                
+                # 层级遍历，每次查询一层的子部门
+                while current_level_ids:
+                    # 查询当前层级的所有子部门
+                    next_level_departments = session.exec(
+                        select(Department).where(Department.parent_id.in_(current_level_ids))
+                    ).all()
+                    
+                    if not next_level_departments:
+                        break
+                    
+                    next_level_ids = []
+                    for dept in next_level_departments:
+                        if dept.id not in visited:
+                            descendants.append(dept)
+                            visited.add(dept.id)
+                            next_level_ids.append(dept.id)
+                    
+                    current_level_ids = next_level_ids
+                
+                return descendants
+                
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise DepartmentModelException(code=500, message=f"获取后代部门失败: {e}")
+                else:
+                    raise DepartmentModelException(code=500, message="获取后代部门失败")
+
+    @classmethod
+    def get_department_tree_by_parent_id_fast(cls, parent_id: int) -> List[Dict[str,str]]:
+        """
+        根据父部门ID构建完整的部门树（极速版本）。
+        
+        当部门总数较少时（建议<1000个），使用一次性查询所有部门的方式，
+        在内存中构建树形结构，性能最优。
         
         Args:
             parent_id (int): 父部门ID
@@ -197,47 +249,121 @@ class Department(SQLModel,table=True):
         """
         with Session(application_sqlmodel_engine) as session:
             try:
-                # 递归构建部门树的内部函数
-                def build_department_tree(dept_parent_id: int) -> List[Dict]:
-                    """
-                    递归构建部门树结构
-                    
-                    Args:
-                        dept_parent_id (int): 当前层级的父部门ID
-                        
-                    Returns:
-                        List[Dict[str:str]]: 当前层级的部门列表，包含子部门
-                    """
-                    departments = session.exec(
-                        select(Department).where(Department.parent_id == dept_parent_id)
-                    ).all()
-                    
-                    result = []
-                    for department in departments:
-                        dept_dict = {
-                            "id": department.id,
-                            "name": department.name,
-                            "level": department.level,
-                            "parent_id": department.parent_id,
-                            "description": department.description,
-                            "manager_name": department.manager_name,
-                            "manager_phone": department.manager_phone,
-                            "created_at": department.created_at,
-                            "updated_at": department.updated_at,
-                            "children": []  # 初始化子部门列表
-                        }
-                        
-                        # 递归获取子部门
-                        children = build_department_tree(department.id)
-                        if children:
-                            dept_dict["children"] = children
-                            
-                        result.append(dept_dict)
-                    
-                    return result
+                # 一次性查询所有部门
+                all_departments = session.exec(select(Department)).all()
                 
-                # 开始构建树形结构
-                return build_department_tree(parent_id)
+                # 构建部门字典的函数
+                def department_to_dict(department: "Department") -> Dict:
+                    """将部门对象转换为字典格式"""
+                    return {
+                        "id": department.id,
+                        "name": department.name, 
+                        "level": department.level,
+                        "parent_id": department.parent_id,
+                        "description": department.description,
+                        "manager_name": department.manager_name,
+                        "manager_phone": department.manager_phone,
+                        "created_at": department.created_at,
+                        "updated_at": department.updated_at,
+                        "children": []
+                    }
+                
+                # 创建部门字典映射
+                dept_dict_map = {}
+                for dept in all_departments:
+                    dept_dict_map[dept.id] = department_to_dict(dept)
+                
+                # 构建父子关系
+                root_departments = []
+                for dept in all_departments:
+                    # 为每个部门将其添加到父部门的children列表中
+                    # 避免循环引用：部门不能将自己添加为自己的子部门
+                    if (dept.parent_id is not None and 
+                        dept.parent_id in dept_dict_map and 
+                        dept.parent_id != dept.id):
+                        parent_dict = dept_dict_map[dept.parent_id]
+                        parent_dict["children"].append(dept_dict_map[dept.id])
+                    
+                    # 如果是直接子部门，添加到根列表
+                    # 但排除自引用的情况（部门不能是自己的子部门）
+                    if dept.parent_id == parent_id and dept.id != parent_id:
+                        root_departments.append(dept_dict_map[dept.id])
+                return root_departments
+                
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise DepartmentModelException(code=500, message=f"构建部门树失败: {e}")
+                else:
+                    raise DepartmentModelException(code=500, message="构建部门树失败")
+
+    @classmethod 
+    def get_department_tree_by_parent_id(cls, parent_id: int) -> List[Dict[str,str]]:
+        """
+        根据父部门ID构建完整的部门树（优化版本）。
+        
+        使用一次性查询 + 内存构建的方式，避免N+1查询问题，显著提升性能。
+        
+        Args:
+            parent_id (int): 父部门ID
+
+        Returns:
+            List[Dict[str:str]]: 返回包含子部门的树形结构列表
+
+        Raises:
+            DepartmentModelException: 如果获取失败，抛出异常
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                # 一次性查询所有相关部门，避免多次数据库访问
+                all_descendants = cls.get_all_descendants(parent_id)
+                
+                # 如果没有子部门，直接返回空列表
+                if not all_descendants:
+                    return []
+                
+                # 创建部门ID到部门对象的映射，提高查找效率
+                dept_map = {dept.id: dept for dept in all_descendants}
+                
+                # 构建部门字典的函数
+                def department_to_dict(department: "Department") -> Dict:
+                    """将部门对象转换为字典格式"""
+                    return {
+                        "id": department.id,
+                        "name": department.name, 
+                        "level": department.level,
+                        "parent_id": department.parent_id,
+                        "description": department.description,
+                        "manager_name": department.manager_name,
+                        "manager_phone": department.manager_phone,
+                        "created_at": department.created_at,
+                        "updated_at": department.updated_at,
+                        "children": []
+                    }
+                
+                # 在内存中构建树形结构
+                dept_dict_map = {}
+                root_departments = []
+                
+                # 第一遍：创建所有部门的字典表示
+                for dept in all_descendants:
+                    dept_dict_map[dept.id] = department_to_dict(dept)
+                
+                # 第二遍：构建父子关系
+                for dept in all_descendants:
+                    dept_dict = dept_dict_map[dept.id]
+                    
+                    if dept.parent_id == parent_id and dept.id != parent_id:
+                        # 直接子部门，添加到根列表
+                        # 但排除自引用的情况（部门不能是自己的子部门）
+                        root_departments.append(dept_dict)
+                    elif (dept.parent_id in dept_dict_map and 
+                          dept.parent_id != dept.id):
+                        # 间接子部门，添加到其父部门的children列表
+                        # 避免循环引用：部门不能将自己添加为自己的子部门
+                        parent_dict = dept_dict_map[dept.parent_id]
+                        parent_dict["children"].append(dept_dict)
+                
+                return root_departments
                 
             except Exception as e:
                 if DEBUG_MODE:
@@ -306,8 +432,16 @@ class Department(SQLModel,table=True):
                 
                 # 递归向上查找父部门，直到找到当前部门或到达根部门
                 current_parent_id = child_department.parent_id
+                visited_ids = set()  # 用于检测循环引用
                 
                 while current_parent_id is not None:
+                    # 检测循环引用
+                    if current_parent_id in visited_ids:
+                        # 发现循环引用，退出循环
+                        return False
+                    
+                    visited_ids.add(current_parent_id)
+                    
                     # 如果找到当前部门，说明是子部门
                     if current_parent_id == self.id:
                         return True

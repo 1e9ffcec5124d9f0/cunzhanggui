@@ -5,8 +5,9 @@ import services.core.department_services as department_services
 import services.core.permission_services as permission_services
 from models.core.user import User
 department_blueprint=Blueprint('department',__name__,url_prefix='/api/department')
-@jwt_required()
+
 @department_blueprint.route('/create',methods=['POST'])
+@jwt_required()
 def create_department():
     """创建部门"""
     data=request.json
@@ -29,8 +30,9 @@ def create_department():
         else:
             return jsonify({"code":500,"message":"未知错误导致创建部门失败"}),500
 
-@jwt_required()
+
 @department_blueprint.route('/update',methods=['PUT'])
+@jwt_required()
 def update_department():
     """更新部门"""
     data=request.json
@@ -54,8 +56,9 @@ def update_department():
         else:
             return jsonify({"code":500,"message":"未知错误导致更新部门失败"}),500
 
-@jwt_required()
+
 @department_blueprint.route('/delete',methods=['DELETE'])
+@jwt_required()
 def delete_department():
     """删除部门"""
     data=request.json
@@ -75,8 +78,9 @@ def delete_department():
         else:
             return jsonify({"code":500,"message":"未知错误导致删除部门失败"}),500
 
-@jwt_required()
+
 @department_blueprint.route('/get', methods=['GET'])
+@jwt_required()
 def get_department():
     """获取部门"""
     department_id = request.args.get('department_id', type=int)
@@ -94,8 +98,9 @@ def get_department():
             return jsonify({"code": 500, "message": str(e)}), 500
         else:
             return jsonify({"code": 500, "message": "未知错误导致获取部门失败"}), 500
-@jwt_required
+
 @department_blueprint.route('/get_my_department', methods=['GET'])
+@jwt_required()
 def get_my_department():
     """获取当前用户部门"""
     current_user_id = get_jwt_identity()
@@ -112,8 +117,9 @@ def get_my_department():
             return jsonify({"code":500,"message":str(e)}),500
         else:
             return jsonify({"code":500,"message":"未知错误导致获取当前用户部门失败"}),500
-@jwt_required()
+
 @department_blueprint.route('/tree', methods=['GET'])
+@jwt_required()
 def get_department_tree():
     """获取部门树"""
     current_user_id = get_jwt_identity()

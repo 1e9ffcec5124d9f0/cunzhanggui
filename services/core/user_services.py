@@ -62,6 +62,8 @@ def create_user(current_user: User, username: str, password: str, id_card_number
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
         raise e
+    except UserServiceException as e:
+        raise e
     except Exception as e:
         if DEBUG_MODE:
             raise UserServiceException(code=500, message=f"创建用户失败: {e}")
@@ -131,6 +133,8 @@ def update_user(current_user: User, user_id: int, username: Optional[str] = None
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
         raise e
+    except UserServiceException as e:
+        raise e
     except Exception as e:
         if DEBUG_MODE:
             raise UserServiceException(code=500, message=f"更新用户失败: {e}")
@@ -178,6 +182,8 @@ def delete_user(current_user: User, user_id: int) -> str:
     except UserModelException as e:
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except UserServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -230,6 +236,8 @@ def get_user(current_user: User, user_id: Optional[int] = None, username: Option
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
         raise e
+    except UserServiceException as e:
+        raise e
     except Exception as e:
         if DEBUG_MODE:
             raise UserServiceException(code=500, message=f"获取用户失败: {e}")
@@ -275,6 +283,8 @@ def get_users_by_department(current_user: User, department_id: Optional[int] = N
     except UserModelException as e:
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except UserServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -325,6 +335,8 @@ def change_user_password(current_user: User, user_id: int, new_password: str) ->
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
         raise e
+    except UserServiceException as e:
+        raise e
     except Exception as e:
         if DEBUG_MODE:
             raise UserServiceException(code=500, message=f"修改密码失败: {e}")
@@ -357,7 +369,7 @@ def login(current_user: User, username: str, password: str) -> str:
         if User.verify_password(username=username, password=password) and current_user.login_attempts<=5:
             current_user.login_attempts=0
             User.update(user_id=current_user.id, login_attempts=current_user.login_attempts)
-            return create_access_token(identity=current_user.id)
+            return create_access_token(identity=str(current_user.id))
         else:
             current_user.login_attempts+=1
             User.update(user_id=current_user.id, login_attempts=current_user.login_attempts)
@@ -365,6 +377,8 @@ def login(current_user: User, username: str, password: str) -> str:
     except UserModelException as e:
         raise UserServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except UserServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:

@@ -20,7 +20,15 @@ redis_db_config={
     "password":os.getenv("REDIS_PASSWORD"),
 }
 
-application_sqlmodel_engine = create_engine(f"mysql+pymysql://{db_config['user']}:{db_config['password']}@{db_config['host']}/{db_config['database']}")
+application_sqlmodel_engine = create_engine(
+    f"mysql+pymysql://{db_config['user']}:{db_config['password']}@{db_config['host']}/{db_config['database']}",
+    pool_size=10,  # 连接池大小
+    max_overflow=20,  # 最大溢出连接数
+    pool_timeout=30,  # 获取连接的超时时间
+    pool_recycle=3600,  # 连接回收时间（1小时）
+    pool_pre_ping=True,  # 连接前检查连接是否有效
+    echo=False  # 是否打印SQL语句
+)
 
 redis_pool = redis.ConnectionPool(
     host=redis_db_config["host"],

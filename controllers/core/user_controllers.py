@@ -9,8 +9,8 @@ from models.core.user import User
 user_blueprint = Blueprint('user', __name__, url_prefix='/api/user')
 
 
-@jwt_required()
 @user_blueprint.route('/create', methods=['POST'])
+@jwt_required()
 def create_user():
     """创建用户"""
     data = request.json
@@ -46,8 +46,8 @@ def create_user():
             return jsonify({"code": 500, "message": "未知错误导致创建用户失败"}), 500
 
 
-@jwt_required()
 @user_blueprint.route('/update', methods=['PUT'])
+@jwt_required()
 def update_user():
     """更新用户"""
     data = request.json
@@ -85,8 +85,8 @@ def update_user():
             return jsonify({"code": 500, "message": "未知错误导致更新用户失败"}), 500
 
 
-@jwt_required()
 @user_blueprint.route('/delete', methods=['DELETE'])
+@jwt_required()
 def delete_user():
     """删除用户"""
     data = request.json
@@ -109,8 +109,8 @@ def delete_user():
             return jsonify({"code": 500, "message": "未知错误导致删除用户失败"}), 500
 
 
-@jwt_required()
 @user_blueprint.route('/get', methods=['GET'])
+@jwt_required()
 def get_user():
     """获取用户"""
     user_id = request.args.get('user_id', type=int)
@@ -137,16 +137,18 @@ def get_user():
             return jsonify({"code": 500, "message": "未知错误导致获取用户失败"}), 500
 
 
-@jwt_required()
 @user_blueprint.route('/get_current', methods=['GET'])
+@jwt_required()
 def get_current_user():
     """获取当前用户信息"""
     current_user_id = get_jwt_identity()
     current_user = User.get_user(current_user_id)
     
     try:
-        result = user_services.get_user(current_user=current_user)
-        return jsonify({"code": 200, "data": result.model_dump(), "message": "获取当前用户信息成功"}), 200
+        user = user_services.get_user(current_user=current_user)
+        result = user.model_dump()
+        result.pop("password_hash")
+        return jsonify({"code": 200, "data": result, "message": "获取当前用户信息成功"}), 200
     except user_services.UserServiceException as e:
         return jsonify({"code": e.code, "message": e.message}), e.code
     except permission_services.PermissionServiceException as e:
@@ -158,8 +160,8 @@ def get_current_user():
             return jsonify({"code": 500, "message": "未知错误导致获取当前用户信息失败"}), 500
 
 
-@jwt_required()
 @user_blueprint.route('/list', methods=['GET'])
+@jwt_required()
 def get_users_by_department():
     """根据部门获取用户列表"""
     department_id = request.args.get('department_id', type=int)
@@ -185,8 +187,8 @@ def get_users_by_department():
             return jsonify({"code": 500, "message": "未知错误导致获取用户列表失败"}), 500
 
 
-@jwt_required()
 @user_blueprint.route('/change_password', methods=['PUT'])
+@jwt_required()
 def change_user_password():
     """修改用户密码"""
     data = request.json
@@ -228,7 +230,7 @@ def login():
     
     try:
         result = user_services.login(current_user=current_user, username=username, password=password)
-        return jsonify({"code": 200, "message": "登录成功","access_token":result}), 200
+        return jsonify({"code": 200, "message": "登录成功","data":{"access_token":result}}), 200
     except user_services.UserServiceException as e:
         return jsonify({"code": e.code, "message": e.message}), e.code
     except permission_services.PermissionServiceException as e:

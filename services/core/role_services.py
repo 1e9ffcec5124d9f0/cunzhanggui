@@ -21,7 +21,7 @@ PermissionManager.register_permission(
 
 
 @require_permission("role.manage.create")
-def create_role(current_user: User, name: str, description: Optional[str] = None, permissions: List[str] = []) -> str:
+def create_role(current_user: User, name: str, description: Optional[str] = None, permissions: List[str] = [],department_id:Optional[int]=None) -> str:
     """创建角色服务函数
     
     Args:
@@ -38,19 +38,26 @@ def create_role(current_user: User, name: str, description: Optional[str] = None
         PermissionServiceException: 权限服务异常
         
     Note:
-        - 只能在当前用户所属部门创建角色
+        - 只能在当前用户所属部门或所属部门的直接子部门创建角色
     """
     try:
         current_department = current_user.get_department()
+        if department_id:
+            if not current_department.check_is_direct_child(department_id) and department_id!=current_department.id:
+                raise RoleServiceException(code=400, message="只能在当前用户所属部门或直接子部门创建角色")
+        else:
+            department_id = current_department.id
         return Role.create(
             name=name,
-            department_id=current_department.id,
+            department_id=department_id,
             description=description,
             permissions=permissions
         )
     except RoleModelException as e:
         raise RoleServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except RoleServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -85,14 +92,16 @@ def update_role(current_user: User, role_id: int, name: Optional[str] = None,
         PermissionServiceException: 权限服务异常
         
     Note:
-        - 只能更新当前部门的角色
+        - 只能更新当前部门或直接子部门的角色
     """
     try:
         current_department = current_user.get_department()
         role = Role.get_role(role_id)
         
-        if current_department.id!=role.department_id:
-            raise RoleServiceException(code=400, message="只能更新当前部门角色")
+        if not current_department.check_is_direct_child(role.department_id) and current_department.id!=role.department_id:
+            raise RoleServiceException(code=400, message="只能更新当前部门或直接子部门角色")
+        # 创建的角色的权限不能超过当前用户角色的权限
+        
             
         return Role.update(
             role_id=role_id,
@@ -103,6 +112,8 @@ def update_role(current_user: User, role_id: int, name: Optional[str] = None,
     except RoleModelException as e:
         raise RoleServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except RoleServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -133,19 +144,21 @@ def delete_role(current_user: User, role_id: int) -> str:
         PermissionServiceException: 权限服务异常
         
     Note:
-        - 只能删除当前部门的角色
+        - 只能删除当前部门或直接子部门的角色
     """
     try:
         current_department = current_user.get_department()
         role = Role.get_role(role_id)
         
-        if current_department.id!=role.department_id:
-            raise RoleServiceException(code=400, message="只能删除当前部门角色")
+        if not current_department.check_is_direct_child(role.department_id) and current_department.id!=role.department_id:
+            raise RoleServiceException(code=400, message="只能删除当前部门或直接子部门角色")
             
         return Role.delete(role_id=role_id)
     except RoleModelException as e:
         raise RoleServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except RoleServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -176,19 +189,21 @@ def get_role(current_user: User, role_id: int) -> Role:
         PermissionServiceException: 权限服务异常
         
     Note:
-        - 只能获取当前部门的角色
+        - 只能获取当前部门或直接子部门的角色
     """
     try:
         current_department = current_user.get_department()
         role = Role.get_role(role_id)
         
-        if current_department.id!=role.department_id:
-            raise RoleServiceException(code=400, message="只能获取当前部门角色")
+        if not current_department.check_is_direct_child(role.department_id) and current_department.id!=role.department_id:
+            raise RoleServiceException(code=400, message="只能获取当前部门或直接子部门角色")
             
         return role
     except RoleModelException as e:
         raise RoleServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except RoleServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
@@ -219,7 +234,7 @@ def get_roles_by_department(current_user: User, department_id: Optional[int] = N
         PermissionServiceException: 权限服务异常
         
     Note:
-        - 只能获取当前部门的角色列表
+        - 只能获取当前部门或直接子部门的角色列表
     """
     try:
         current_department = current_user.get_department()
@@ -227,14 +242,16 @@ def get_roles_by_department(current_user: User, department_id: Optional[int] = N
         if department_id is None:
             target_department_id = current_department.id
         else:
-            if current_department.id!=department_id:
-                raise RoleServiceException(code=400, message="只能获取当前部门的角色列表")
+            if not current_department.check_is_direct_child(department_id) and department_id!=current_department.id:
+                raise RoleServiceException(code=400, message="只能获取当前部门或直接子部门的角色列表")
             target_department_id = department_id
             
         return Role.get_roles_by_department_id(target_department_id)
     except RoleModelException as e:
         raise RoleServiceException(code=e.code, message=e.message)
     except PermissionServiceException as e:
+        raise e
+    except RoleServiceException as e:
         raise e
     except Exception as e:
         if DEBUG_MODE:
