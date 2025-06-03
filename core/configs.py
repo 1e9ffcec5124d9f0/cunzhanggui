@@ -20,6 +20,14 @@ redis_db_config={
     "password":os.getenv("REDIS_PASSWORD"),
 }
 
+# MinIO 配置
+minio_config = {
+    "endpoint": os.getenv("MINIO_ENDPOINT", "localhost:9000"),
+    "access_key": os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+    "secret_key": os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+    "secure": os.getenv("MINIO_SECURE", "False").lower() == "true"
+}
+
 application_sqlmodel_engine = create_engine(
     f"mysql+pymysql://{db_config['user']}:{db_config['password']}@{db_config['host']}/{db_config['database']}",
     pool_size=10,  # 连接池大小

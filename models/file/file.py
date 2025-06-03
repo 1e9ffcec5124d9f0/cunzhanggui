@@ -1,9 +1,13 @@
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
-from sqlmodel import SQLModel, Field, Session, select, Column, LargeBinary
-import hashlib
-import mimetypes
-from core.configs import DEBUG_MODE, application_sqlmodel_engine
+from typing import Optional, List, Dict, BinaryIO
+from sqlmodel import SQLModel, Field, Session, select
+from minio import Minio
+from minio.error import S3Error
+import uuid
+import os
+from pathlib import Path
+
+from core.configs import DEBUG_MODE, application_sqlmodel_engine, minio_config
 
 
 class FileModelException(Exception):
@@ -31,209 +35,401 @@ class FileModelException(Exception):
 class File(SQLModel, table=True):
     """文件模型类。
     
-    用于存储和管理50MB以下的小文件。
-    这是一个简化的文件存储模型，只包含文件的核心信息。
+    用于表示系统中的文件信息，包含文件的基本信息和MinIO存储路径。
+    支持文件的上传、下载、删除等操作。
     
     Attributes:
         id: 主键ID，自动生成
+        file_name: 存储文件名（hash+扩展名）
+        file_path: MinIO中的文件路径
         file_size: 文件大小（字节）
         mime_type: 文件MIME类型
-        file_hash: 文件SHA256哈希值，用于去重和完整性校验
-        file_content: 文件二进制内容
+        file_hash: 文件哈希值（用于去重）
+        uploader_id: 上传者用户ID
+        department_id: 所属部门ID
+        created_at: 创建时间，默认为当前UTC时间
     """
     
     __tablename__ = "files"
     
     id: Optional[int] = Field(default=None, primary_key=True)
+    file_name: str = Field(..., description="存储文件名")
+    file_path: str = Field(..., description="MinIO中的文件路径")
     file_size: int = Field(..., description="文件大小（字节）")
     mime_type: str = Field(..., description="文件MIME类型")
-    file_hash: str = Field(..., index=True, unique=True, description="文件SHA256哈希值")
-    file_content: bytes = Field(..., sa_column=Column(LargeBinary), description="文件二进制内容")
-    
+    file_hash: str = Field(..., index=True, description="文件哈希值")
+    uploader_id: int = Field(..., foreign_key="users.id", description="上传者用户ID")
+    department_id: int = Field(..., foreign_key="departments.id", description="所属部门ID")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
     @staticmethod
-    def calculate_file_hash(file_content: bytes) -> str:
-        """计算文件的SHA256哈希值。
+    def _get_minio_client() -> Minio:
+        """获取MinIO客户端实例。
+        
+        Returns:
+            Minio: MinIO客户端实例
+            
+        Raises:
+            FileModelException: 当MinIO连接失败时
+        """
+        try:
+            client = Minio(
+                endpoint=minio_config["endpoint"],
+                access_key=minio_config["access_key"],
+                secret_key=minio_config["secret_key"],
+                secure=minio_config["secure"]
+            )
+            return client
+        except Exception as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"MinIO连接失败: {e}")
+            else:
+                raise FileModelException(code=500, message="MinIO连接失败")
+
+    @staticmethod
+    def _ensure_bucket_exists(client: Minio, bucket_name: str) -> None:
+        """确保存储桶存在，如果不存在则创建。
         
         Args:
-            file_content: 文件二进制内容
+            client: MinIO客户端实例
+            bucket_name: 存储桶名称
+            
+        Raises:
+            FileModelException: 当存储桶创建失败时
+        """
+        try:
+            if not client.bucket_exists(bucket_name):
+                client.make_bucket(bucket_name)
+        except S3Error as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"存储桶创建失败: {e}")
+            else:
+                raise FileModelException(code=500, message="存储桶创建失败")
+
+    @staticmethod
+    def _calculate_file_hash(file_data: bytes) -> str:
+        """计算文件哈希值。
+        
+        Args:
+            file_data: 文件二进制数据
             
         Returns:
-            str: 文件的SHA256哈希值（十六进制字符串）
+            str: 文件的SHA256哈希值
         """
-        return hashlib.sha256(file_content).hexdigest()
-    
+        import hashlib
+        return hashlib.sha256(file_data).hexdigest()
+
     @staticmethod
-    def get_mime_type(filename: str) -> str:
+    def _get_mime_type(file_name: str) -> str:
         """根据文件名获取MIME类型。
         
         Args:
-            filename: 文件名
+            file_name: 文件名
             
         Returns:
-            str: MIME类型，如果无法识别则返回'application/octet-stream'
+            str: MIME类型
         """
-        mime_type, _ = mimetypes.guess_type(filename)
-        return mime_type or 'application/octet-stream'
-    
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(file_name)
+        return mime_type or "application/octet-stream"
+
     @classmethod
-    def store_file(cls, file_content: bytes, filename: Optional[str] = None) -> Dict[str, str]:
-        """存储文件。
+    def upload_file(
+        cls,
+        file_data: bytes,
+        original_name: str,
+        uploader_id: int,
+        department_id: int
+    ) -> "File":
+        """上传文件到MinIO并创建文件记录。
         
         Args:
-            file_content: 文件二进制内容
-            filename: 文件名（可选，用于确定MIME类型）
+            file_data: 文件二进制数据
+            original_name: 原始文件名
+            uploader_id: 上传者用户ID
+            department_id: 所属部门ID
             
         Returns:
-            Dict[str, str]: 包含文件ID和哈希值的字典
+            File: 创建的文件对象
             
         Raises:
-            FileModelException: 当文件大小超限或其他错误时抛出
+            FileModelException: 当上传失败时
         """
-        # 检查文件大小限制（50MB = 50 * 1024 * 1024 bytes）
-        max_file_size = 50 * 1024 * 1024
-        if len(file_content) > max_file_size:
-            raise FileModelException(code=413, message=f"文件大小超过限制，最大允许{max_file_size // (1024 * 1024)}MB")
-        
-        with Session(application_sqlmodel_engine) as session:
-            try:
-                # 计算文件哈希值
-                file_hash = cls.calculate_file_hash(file_content)
+        bucket_name = "department-"+str(department_id)
+            
+        try:
+            # 计算文件哈希值
+            file_hash = cls._calculate_file_hash(file_data)
+            
+            # 检查是否已存在相同哈希的文件
+            with Session(application_sqlmodel_engine) as session:
+                existing_file = session.exec(
+                    select(File).where(File.file_hash == file_hash)
+                ).first()
                 
-                # 检查是否已存在相同哈希值的文件（去重）
-                existing_file = session.exec(select(File).where(File.file_hash == file_hash)).first()
                 if existing_file:
-                    return {
-                        "code":200,
-                        "data":{
-                            "file_id": str(existing_file.id),
-                            "file_hash": existing_file.file_hash,
-                        },
-                        "message": "文件已存在，返回现有文件ID"
-                    }
-                
-                # 获取MIME类型
-                mime_type = cls.get_mime_type(filename) if filename else 'application/octet-stream'
-                
-                # 创建文件记录
-                file_record = cls(
-                    file_size=len(file_content),
-                    mime_type=mime_type,
-                    file_hash=file_hash,
-                    file_content=file_content
-                )
-                
+                    # 如果文件已存在，返回现有文件记录（可选择是否创建新记录）
+                    return existing_file
+            
+            # 生成文件名：hash + 扩展名
+            file_extension = Path(original_name).suffix
+            file_name = f"{file_hash}{file_extension}"
+            file_path = f"{datetime.now().strftime('%Y/%m/%d')}/{file_name}"
+            
+            # 获取MinIO客户端
+            client = cls._get_minio_client()
+            cls._ensure_bucket_exists(client, bucket_name)
+            
+            # 上传文件到MinIO
+            from io import BytesIO
+            file_stream = BytesIO(file_data)
+            client.put_object(
+                bucket_name=bucket_name,
+                object_name=file_path,
+                data=file_stream,
+                length=len(file_data),
+                content_type=cls._get_mime_type(original_name)
+            )
+            
+            # 创建文件记录
+            file_record = cls(
+                file_name=file_name,
+                file_path=file_path,
+                file_size=len(file_data),
+                mime_type=cls._get_mime_type(original_name),
+                file_hash=file_hash,
+                uploader_id=uploader_id,
+                department_id=department_id
+            )
+            
+            with Session(application_sqlmodel_engine) as session:
                 session.add(file_record)
                 session.commit()
                 session.refresh(file_record)
                 
-                return {
-                    "code":200,
-                    "data":{
-                        "file_id": str(file_record.id),
-                        "file_hash": file_record.file_hash,
-                    },
-                    "message": "文件存储成功"
-                }
-                
-            except FileModelException as e:
-                session.rollback()
-                raise e
-            except Exception as e:
-                session.rollback()
-                if DEBUG_MODE:
-                    raise FileModelException(code=500, message=f"文件存储失败: {str(e)}")
-                else:
-                    raise FileModelException(code=500, message="文件存储失败")
-    
-    @classmethod
-    def get_file(cls, file_id: Optional[int] = None, file_hash: Optional[str] = None) -> Optional["File"]:
-        """获取文件。
-        
-        Args:
-            file_id: 文件ID，可选
-            file_hash: 文件哈希值，可选
+            return file_record
             
+        except Exception as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"文件上传失败: {e}")
+            else:
+                raise FileModelException(code=500, message="文件上传失败")
+
+    def download_file(self) -> bytes:
+        """从MinIO下载文件数据。
+        
         Returns:
-            File: 文件对象，如果不存在则返回None
+            bytes: 文件二进制数据
             
         Raises:
-            FileModelException: 当参数错误或查询失败时抛出
+            FileModelException: 当下载失败时
         """
-        if not file_id and not file_hash:
-            raise FileModelException(code=400, message="必须提供file_id或file_hash参数")
-        
-        with Session(application_sqlmodel_engine) as session:
-            try:
-                if file_id:
-                    file_record = session.exec(select(File).where(File.id == file_id)).first()
-                else:
-                    file_record = session.exec(select(File).where(File.file_hash == file_hash)).first()
-                
-                return file_record
-                
-            except Exception as e:
-                if DEBUG_MODE:
-                    raise FileModelException(code=500, message=f"获取文件失败: {str(e)}")
-                else:
-                    raise FileModelException(code=500, message="获取文件失败")
-    
-    
-    @classmethod
-    def delete_file(cls, file_id: Optional[int] = None, file_hash: Optional[str] = None) -> Dict[str, str]:
-        """删除文件。
+        try:
+            bucket_name = "department-"+str(self.department_id)
+            client = self._get_minio_client()
+            response = client.get_object(bucket_name, self.file_path)
+            file_data = response.read()
+            response.close()
+            response.release_conn()
+            return file_data
+        except S3Error as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=404, message=f"文件下载失败: {e}")
+            else:
+                raise FileModelException(code=404, message="文件不存在或下载失败")
+        except Exception as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"文件下载失败: {e}")
+            else:
+                raise FileModelException(code=500, message="文件下载失败")
+
+    def get_download_url(self, expires_in_seconds: int = 3600) -> str:
+        """获取文件的预签名下载URL。
         
         Args:
-            file_id: 文件ID，可选
-            file_hash: 文件哈希值，可选
+            expires_in_seconds: URL过期时间（秒），默认1小时
             
         Returns:
-            Dict[str, str]: 成功消息
+            str: 预签名下载URL
             
         Raises:
-            FileModelException: 当文件不存在或删除失败时抛出
+            FileModelException: 当获取URL失败时
         """
-        if not file_id and not file_hash:
-            raise FileModelException(code=400, message="必须提供file_id或file_hash参数")
+        try:
+            bucket_name = "department-"+str(self.department_id)
+            client = self._get_minio_client()
+            from datetime import timedelta
+            url = client.presigned_get_object(
+                bucket_name=bucket_name,
+                object_name=self.file_path,
+                expires=timedelta(seconds=expires_in_seconds)
+            )
+            return url
+        except Exception as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"获取下载URL失败: {e}")
+            else:
+                raise FileModelException(code=500, message="获取下载URL失败")
+
+    def delete_file(self) -> str:
+        """删除文件（从MinIO和数据库中删除）。
         
-        with Session(application_sqlmodel_engine) as session:
-            try:
-                if file_id:
-                    file_record = session.exec(select(File).where(File.id == file_id)).first()
-                else:
-                    file_record = session.exec(select(File).where(File.file_hash == file_hash)).first()
-                
-                if not file_record:
-                    raise FileModelException(code=404, message="文件不存在")
-                
-                session.delete(file_record)
+        Returns:
+            str: 删除成功消息
+            
+        Raises:
+            FileModelException: 当删除失败时
+        """
+        try:
+            # 从MinIO删除文件
+            bucket_name = "department-"+str(self.department_id)
+            client = self._get_minio_client()
+            client.remove_object(bucket_name, self.file_path)
+            
+            # 从数据库删除记录
+            with Session(application_sqlmodel_engine) as session:
+                session.delete(self)
                 session.commit()
                 
-                return {"message": "文件删除成功"}
-                
-            except FileModelException as e:
-                session.rollback()
-                raise e
-            except Exception as e:
-                session.rollback()
-                if DEBUG_MODE:
-                    raise FileModelException(code=500, message=f"文件删除失败: {str(e)}")
-                else:
-                    raise FileModelException(code=500, message="文件删除失败")
-    
+            return "文件删除成功"
+            
+        except S3Error as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"MinIO文件删除失败: {e}")
+            else:
+                raise FileModelException(code=500, message="文件删除失败")
+        except Exception as e:
+            if DEBUG_MODE:
+                raise FileModelException(code=500, message=f"文件删除失败: {e}")
+            else:
+                raise FileModelException(code=500, message="文件删除失败")
+
     @classmethod
-    def file_exists(cls, file_hash: str) -> bool:
-        """检查文件是否存在。
+    def get_file_by_id(cls, file_id: int) -> "File":
+        """根据文件ID获取文件记录。
         
         Args:
-            file_hash: 文件哈希值
+            file_id: 文件ID
             
         Returns:
-            bool: 文件是否存在
+            File: 文件对象
+            
+        Raises:
+            FileModelException: 当文件不存在时
         """
         with Session(application_sqlmodel_engine) as session:
             try:
-                file_record = session.exec(select(File).where(File.file_hash == file_hash)).first()
-                return file_record is not None
-            except Exception:
-                return False
-    
+                file_record = session.exec(select(File).where(File.id == file_id)).first()
+                if not file_record:
+                    raise FileModelException(code=404, message="文件不存在")
+                return file_record
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise FileModelException(code=500, message=f"获取文件失败: {e}")
+                else:
+                    raise FileModelException(code=500, message="获取文件失败")
+
+    @classmethod
+    def get_files_by_uploader(cls, uploader_id: int, limit: int = 50, offset: int = 0) -> List["File"]:
+        """根据上传者ID获取文件列表。
+        
+        Args:
+            uploader_id: 上传者用户ID
+            limit: 返回记录数限制，默认50
+            offset: 偏移量，默认0
+            
+        Returns:
+            List[File]: 文件对象列表
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                files = session.exec(
+                    select(File)
+                    .where(File.uploader_id == uploader_id)
+                    .order_by(File.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                ).all()
+                return list(files)
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise FileModelException(code=500, message=f"获取文件列表失败: {e}")
+                else:
+                    raise FileModelException(code=500, message="获取文件列表失败")
+
+    @classmethod
+    def get_files_by_department(cls, department_id: int, limit: int = 50, offset: int = 0) -> List["File"]:
+        """根据部门ID获取文件列表。
+        
+        Args:
+            department_id: 部门ID
+            limit: 返回记录数限制，默认50
+            offset: 偏移量，默认0
+            
+        Returns:
+            List[File]: 文件对象列表
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                files = session.exec(
+                    select(File)
+                    .where(File.department_id == department_id)
+                    .order_by(File.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                ).all()
+                return list(files)
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise FileModelException(code=500, message=f"获取文件列表失败: {e}")
+                else:
+                    raise FileModelException(code=500, message="获取文件列表失败")
+
+    @classmethod
+    def search_files(
+        cls,
+        keyword: str,
+        department_id: Optional[int] = None,
+        uploader_id: Optional[int] = None,
+        mime_type: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List["File"]:
+        """搜索文件。
+        
+        Args:
+            keyword: 搜索关键词（在文件名中搜索）
+            department_id: 部门ID过滤，可选
+            uploader_id: 上传者ID过滤，可选
+            mime_type: MIME类型过滤，可选
+            limit: 返回记录数限制，默认50
+            offset: 偏移量，默认0
+            
+        Returns:
+            List[File]: 文件对象列表
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                query = select(File).where(File.file_name.contains(keyword))
+                
+                if department_id is not None:
+                    query = query.where(File.department_id == department_id)
+                    
+                if uploader_id is not None:
+                    query = query.where(File.uploader_id == uploader_id)
+                    
+                if mime_type is not None:
+                    query = query.where(File.mime_type.contains(mime_type))
+                
+                files = session.exec(
+                    query.order_by(File.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                ).all()
+                
+                return list(files)
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise FileModelException(code=500, message=f"搜索文件失败: {e}")
+                else:
+                    raise FileModelException(code=500, message="搜索文件失败")

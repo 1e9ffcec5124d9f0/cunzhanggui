@@ -8,3 +8,4 @@ pymysql
 redis
 python-dotenv
 pytest
+minio
