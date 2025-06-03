@@ -103,8 +103,11 @@ class File(SQLModel, table=True):
                 existing_file = session.exec(select(File).where(File.file_hash == file_hash)).first()
                 if existing_file:
                     return {
-                        "file_id": str(existing_file.id),
-                        "file_hash": existing_file.file_hash,
+                        "code":200,
+                        "data":{
+                            "file_id": str(existing_file.id),
+                            "file_hash": existing_file.file_hash,
+                        },
                         "message": "文件已存在，返回现有文件ID"
                     }
                 
@@ -124,8 +127,11 @@ class File(SQLModel, table=True):
                 session.refresh(file_record)
                 
                 return {
-                    "file_id": str(file_record.id),
-                    "file_hash": file_record.file_hash,
+                    "code":200,
+                    "data":{
+                        "file_id": str(file_record.id),
+                        "file_hash": file_record.file_hash,
+                    },
                     "message": "文件存储成功"
                 }
                 
