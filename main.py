@@ -12,6 +12,8 @@ from controllers.core.user_controllers import user_blueprint
 from controllers.core.crypto_controllers import crypto_blueprint
 from controllers.core.department_controllers import department_blueprint
 from controllers.core.role_controllers import role_blueprint
+from controllers.core.internal_organization_controllers import internal_organization_blueprint
+from controllers.core.internal_organization_to_user_controllers import internal_organization_to_user_blueprint
 app = Flask(__name__)
 
 jwt = JWTManager(app)
@@ -20,6 +22,8 @@ app.register_blueprint(user_blueprint)
 app.register_blueprint(crypto_blueprint)
 app.register_blueprint(department_blueprint)
 app.register_blueprint(role_blueprint)
+app.register_blueprint(internal_organization_blueprint)
+app.register_blueprint(internal_organization_to_user_blueprint)
 
 
 app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY

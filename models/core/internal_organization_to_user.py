@@ -51,12 +51,20 @@ class InternalOrganizationToUser(SQLModel,table=True):
         """
         with Session(application_sqlmodel_engine) as session:
             try:
-                internal_organization_to_user=session.get(InternalOrganizationToUser,internal_organization_id,user_id)
+                internal_organization_to_user = session.exec(
+                    select(InternalOrganizationToUser).where(
+                        InternalOrganizationToUser.internal_organization_id == internal_organization_id,
+                        InternalOrganizationToUser.user_id == user_id
+                    )
+                ).first()
                 if not internal_organization_to_user:
                     raise InternalOrganizationToUserModelException(code=404,message="内部组织与用户关系不存在")
                 session.delete(internal_organization_to_user)
                 session.commit()
                 return {"code":200,"message":"内部组织与用户关系删除成功"}
+            except InternalOrganizationToUserModelException as e:
+                session.rollback()
+                raise e
             except Exception as e:
                 session.rollback()
                 if DEBUG_MODE:
