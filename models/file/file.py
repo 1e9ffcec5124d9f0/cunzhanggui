@@ -45,6 +45,7 @@ class File(SQLModel, table=True):
         file_size: 文件大小（字节）
         mime_type: 文件MIME类型
         file_hash: 文件哈希值（用于去重）
+        bucket_name: MinIO存储桶名称
         uploader_id: 上传者用户ID
         department_id: 所属部门ID
         created_at: 创建时间，默认为当前UTC时间
@@ -58,6 +59,7 @@ class File(SQLModel, table=True):
     file_size: int = Field(..., description="文件大小（字节）")
     mime_type: str = Field(..., description="文件MIME类型")
     file_hash: str = Field(..., index=True, description="文件哈希值")
+    bucket_name: str = Field(..., description="MinIO存储桶名称")
     uploader_id: int = Field(..., foreign_key="users.id", description="上传者用户ID")
     department_id: int = Field(..., foreign_key="departments.id", description="所属部门ID")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -139,7 +141,8 @@ class File(SQLModel, table=True):
         file_data: bytes,
         original_name: str,
         uploader_id: int,
-        department_id: int
+        department_id: int,
+        bucket_name: Optional[str] = None
     ) -> "File":
         """上传文件到MinIO并创建文件记录。
         
@@ -148,6 +151,7 @@ class File(SQLModel, table=True):
             original_name: 原始文件名
             uploader_id: 上传者用户ID
             department_id: 所属部门ID
+            bucket_name: MinIO存储桶名称，如果不提供则使用默认的部门桶名
             
         Returns:
             File: 创建的文件对象
@@ -155,16 +159,21 @@ class File(SQLModel, table=True):
         Raises:
             FileModelException: 当上传失败时
         """
-        bucket_name = "department-"+str(department_id)
+        # 如果没有指定bucket_name，使用默认的部门桶名
+        if bucket_name is None:
+            bucket_name = f"department-{department_id}"
             
         try:
             # 计算文件哈希值
             file_hash = cls._calculate_file_hash(file_data)
             
-            # 检查是否已存在相同哈希的文件
+            # 检查是否已存在相同哈希和桶的文件
             with Session(application_sqlmodel_engine) as session:
                 existing_file = session.exec(
-                    select(File).where(File.file_hash == file_hash)
+                    select(File).where(
+                        File.file_hash == file_hash,
+                        File.bucket_name == bucket_name
+                    )
                 ).first()
                 
                 if existing_file:
@@ -198,6 +207,7 @@ class File(SQLModel, table=True):
                 file_size=len(file_data),
                 mime_type=cls._get_mime_type(original_name),
                 file_hash=file_hash,
+                bucket_name=bucket_name,
                 uploader_id=uploader_id,
                 department_id=department_id
             )
@@ -225,9 +235,8 @@ class File(SQLModel, table=True):
             FileModelException: 当下载失败时
         """
         try:
-            bucket_name = "department-"+str(self.department_id)
             client = self._get_minio_client()
-            response = client.get_object(bucket_name, self.file_path)
+            response = client.get_object(self.bucket_name, self.file_path)
             file_data = response.read()
             response.close()
             response.release_conn()
@@ -256,11 +265,10 @@ class File(SQLModel, table=True):
             FileModelException: 当获取URL失败时
         """
         try:
-            bucket_name = "department-"+str(self.department_id)
             client = self._get_minio_client()
             from datetime import timedelta
             url = client.presigned_get_object(
-                bucket_name=bucket_name,
+                bucket_name=self.bucket_name,
                 object_name=self.file_path,
                 expires=timedelta(seconds=expires_in_seconds)
             )
@@ -282,9 +290,8 @@ class File(SQLModel, table=True):
         """
         try:
             # 从MinIO删除文件
-            bucket_name = "department-"+str(self.department_id)
             client = self._get_minio_client()
-            client.remove_object(bucket_name, self.file_path)
+            client.remove_object(self.bucket_name, self.file_path)
             
             # 从数据库删除记录
             with Session(application_sqlmodel_engine) as session:
@@ -392,6 +399,7 @@ class File(SQLModel, table=True):
         department_id: Optional[int] = None,
         uploader_id: Optional[int] = None,
         mime_type: Optional[str] = None,
+        bucket_name: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
     ) -> List["File"]:
@@ -402,6 +410,7 @@ class File(SQLModel, table=True):
             department_id: 部门ID过滤，可选
             uploader_id: 上传者ID过滤，可选
             mime_type: MIME类型过滤，可选
+            bucket_name: 存储桶名称过滤，可选
             limit: 返回记录数限制，默认50
             offset: 偏移量，默认0
             
@@ -420,6 +429,9 @@ class File(SQLModel, table=True):
                     
                 if mime_type is not None:
                     query = query.where(File.mime_type.contains(mime_type))
+                    
+                if bucket_name is not None:
+                    query = query.where(File.bucket_name == bucket_name)
                 
                 files = session.exec(
                     query.order_by(File.created_at.desc())
@@ -433,3 +445,31 @@ class File(SQLModel, table=True):
                     raise FileModelException(code=500, message=f"搜索文件失败: {e}")
                 else:
                     raise FileModelException(code=500, message="搜索文件失败")
+
+    @classmethod
+    def get_files_by_bucket(cls, bucket_name: str, limit: int = 50, offset: int = 0) -> List["File"]:
+        """根据存储桶名称获取文件列表。
+        
+        Args:
+            bucket_name: 存储桶名称
+            limit: 返回记录数限制，默认50
+            offset: 偏移量，默认0
+            
+        Returns:
+            List[File]: 文件对象列表
+        """
+        with Session(application_sqlmodel_engine) as session:
+            try:
+                files = session.exec(
+                    select(File)
+                    .where(File.bucket_name == bucket_name)
+                    .order_by(File.created_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                ).all()
+                return list(files)
+            except Exception as e:
+                if DEBUG_MODE:
+                    raise FileModelException(code=500, message=f"获取文件列表失败: {e}")
+                else:
+                    raise FileModelException(code=500, message="获取文件列表失败")
